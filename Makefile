@@ -3,7 +3,7 @@ BUILD_DIR := bin
 DIST_DIR := dist
 MAIN_PKG := ./cmd/ollamon
 GOCACHE := $(CURDIR)/.gocache
-VERSION := 0.1.0
+VERSION := 0.1.1
 
 .PHONY: build run tidy clean dist
 
