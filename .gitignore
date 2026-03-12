@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Go build artifacts
+/bin/
+/ollamon
+*.test
+*.out
+coverage.out
+cover.out
+*.coverprofile
+
+# Go local caches
+.gocache/
+.gomodcache/
+.cache/go-build/
+
+# Release artifacts
+/dist/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
+.vscode/
+.idea/
