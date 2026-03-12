@@ -52,10 +52,17 @@ type RunningModel struct {
 }
 
 func NewClient(baseURL string) *Client {
+	return NewClientWithTimeout(baseURL, 5*time.Second)
+}
+
+func NewClientWithTimeout(baseURL string, timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
 	return &Client{
 		BaseURL: baseURL,
 		HTTP: &http.Client{
-			Timeout: 1500 * time.Millisecond,
+			Timeout: timeout,
 		},
 	}
 }

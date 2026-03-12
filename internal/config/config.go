@@ -8,12 +8,13 @@ import (
 )
 
 type Config struct {
-	BaseURL      string
-	Interval     time.Duration
-	RootDiskPath string
-	Compact      bool
-	LogPath      string
-	Version      string
+	BaseURL        string
+	Interval       time.Duration
+	RequestTimeout time.Duration
+	RootDiskPath   string
+	Compact        bool
+	LogPath        string
+	Version        string
 }
 
 const defaultBaseURL = "http://127.0.0.1:11434"
@@ -23,6 +24,13 @@ func Load() Config {
 	if v := strings.TrimSpace(os.Getenv("OLLAMON_INTERVAL_MS")); v != "" {
 		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
 			interval = time.Duration(ms) * time.Millisecond
+		}
+	}
+
+	requestTimeout := 5 * time.Second
+	if v := strings.TrimSpace(os.Getenv("OLLAMON_REQUEST_TIMEOUT_MS")); v != "" {
+		if ms, err := strconv.Atoi(v); err == nil && ms > 0 {
+			requestTimeout = time.Duration(ms) * time.Millisecond
 		}
 	}
 
@@ -39,11 +47,12 @@ func Load() Config {
 	logPath := strings.TrimSpace(os.Getenv("OLLAMON_LOG_PATH"))
 
 	return Config{
-		BaseURL:      normalizeBaseURL(os.Getenv("OLLAMA_HOST")),
-		Interval:     interval,
-		RootDiskPath: diskPath,
-		Compact:      compact,
-		LogPath:      logPath,
+		BaseURL:        normalizeBaseURL(os.Getenv("OLLAMA_HOST")),
+		Interval:       interval,
+		RequestTimeout: requestTimeout,
+		RootDiskPath:   diskPath,
+		Compact:        compact,
+		LogPath:        logPath,
 	}
 }
 

@@ -24,7 +24,20 @@ type Stats struct {
 	DiskUsedGB        float64
 	DiskTotalGB       float64
 	DiskUsedPercent   float64
+	GPU               GPUStats
 	GPUSummary        string
+}
+
+type GPUStats struct {
+	Name           string
+	UtilizationPct float64
+	PowerW         float64
+	FrequencyMHz   float64
+	TemperatureC   float64
+	MemoryTotalGB  float64
+	MemoryUsedGB   float64
+	Available      bool
+	Backend        string
 }
 
 func Collect(rootDiskPath string) (Stats, error) {
@@ -54,10 +67,24 @@ func Collect(rootDiskPath string) (Stats, error) {
 		s.DiskUsedPercent = du.UsedPercent
 	}
 
-	s.GPUSummary = ProbeGPUSummary()
+	s.GPU = ProbeGPUStats()
+	s.GPUSummary = gpuSummary(s.GPU)
 	return s, nil
 }
 
 func toGB(v uint64) float64 {
 	return float64(v) / 1024 / 1024 / 1024
+}
+
+func gpuSummary(g GPUStats) string {
+	if !g.Available {
+		return "gpu: unavailable"
+	}
+	if g.UtilizationPct > 0 {
+		return g.Name
+	}
+	if g.Name != "" {
+		return g.Name
+	}
+	return "gpu: detected"
 }

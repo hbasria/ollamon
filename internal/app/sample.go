@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/example/ollamon/internal/config"
@@ -26,8 +27,6 @@ type Sample struct {
 
 func CollectSample(cfg config.Config, client *ollama.Client) (Sample, error) {
 	s := Sample{Time: time.Now(), BaseURL: client.BaseURL}
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
-	defer cancel()
 
 	hs, _ := system.Collect(cfg.RootDiskPath)
 	s.Host = hs
@@ -40,8 +39,36 @@ func CollectSample(cfg config.Config, client *ollama.Client) (Sample, error) {
 		s.LogError = logErr.Error()
 	}
 
-	installed, errTags := client.Tags(ctx)
-	running, errPS := client.PS(ctx)
+	timeout := cfg.RequestTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	var (
+		installed []ollama.Model
+		running   []ollama.RunningModel
+		errTags   error
+		errPS     error
+		wg        sync.WaitGroup
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		installed, errTags = client.Tags(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		running, errPS = client.PS(ctx)
+	}()
+
+	wg.Wait()
 
 	s.Installed = installed
 	s.Running = running
@@ -52,7 +79,7 @@ func CollectSample(cfg config.Config, client *ollama.Client) (Sample, error) {
 		return s, nil
 	case errTags != nil && errPS != nil:
 		s.HealthError = fmt.Sprintf("tags: %v | ps: %v", errTags, errPS)
-		return s, fmt.Errorf("ollama erişilemedi: %s", s.HealthError)
+		return s, fmt.Errorf("ollama unavailable: %s", s.HealthError)
 	case errTags != nil:
 		s.HealthError = errTags.Error()
 		return s, nil

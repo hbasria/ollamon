@@ -36,17 +36,19 @@ type Model struct {
 	cpuHistory  []float64
 	memHistory  []float64
 	diskHistory []float64
+	gpuHistory  []float64
 }
 
 func New(cfg config.Config) Model {
 	return Model{
 		cfg:         cfg,
-		client:      ollama.NewClient(cfg.BaseURL),
+		client:      ollama.NewClientWithTimeout(cfg.BaseURL, cfg.RequestTimeout),
 		width:       120,
 		height:      40,
 		cpuHistory:  make([]float64, 0, 40),
 		memHistory:  make([]float64, 0, 40),
 		diskHistory: make([]float64, 0, 40),
+		gpuHistory:  make([]float64, 0, 40),
 	}
 }
 
@@ -97,6 +99,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cpuHistory = pushHistory(m.cpuHistory, msg.sample.Host.CPUPercent, 48)
 		m.memHistory = pushHistory(m.memHistory, msg.sample.Host.MemoryUsedPercent, 48)
 		m.diskHistory = pushHistory(m.diskHistory, msg.sample.Host.DiskUsedPercent, 48)
+		m.gpuHistory = pushHistory(m.gpuHistory, msg.sample.Host.GPU.UtilizationPct, 48)
 	case tickMsg:
 		return m, tea.Batch(m.refreshCmd(), tickCmd(m.cfg.Interval))
 	}
@@ -197,6 +200,7 @@ func (m Model) renderOverview() string {
 	cpuBar := util.PercentBar(s.Host.CPUPercent, 18, "█", "░")
 	memBar := util.PercentBar(s.Host.MemoryUsedPercent, 18, "█", "░")
 	diskBar := util.PercentBar(s.Host.DiskUsedPercent, 18, "█", "░")
+	gpuBar := util.PercentBar(s.Host.GPU.UtilizationPct, 18, "█", "░")
 
 	lines := []string{
 		tui.Title.Render("Overview"),
@@ -208,9 +212,11 @@ func (m Model) renderOverview() string {
 		fmt.Sprintf("%s %5.1f%% %s", tui.MetricLabel.Render("CPU"), s.Host.CPUPercent, colorizePercent(s.Host.CPUPercent, cpuBar)),
 		fmt.Sprintf("%s %5.1f%% %s", tui.MetricLabel.Render("MEM"), s.Host.MemoryUsedPercent, colorizePercent(s.Host.MemoryUsedPercent, memBar)),
 		fmt.Sprintf("%s %5.1f%% %s", tui.MetricLabel.Render("DSK"), s.Host.DiskUsedPercent, colorizePercent(s.Host.DiskUsedPercent, diskBar)),
+		fmt.Sprintf("%s %5.1f%% %s", tui.MetricLabel.Render("GPU"), s.Host.GPU.UtilizationPct, colorizePercent(s.Host.GPU.UtilizationPct, gpuBar)),
 		"",
 		fmt.Sprintf("%s %.1f / %.1f GB", tui.MetricLabel.Render("Memory"), s.Host.MemoryUsedGB, s.Host.MemoryTotalGB),
 		fmt.Sprintf("%s %.1f / %.1f GB", tui.MetricLabel.Render("Disk"), s.Host.DiskUsedGB, s.Host.DiskTotalGB),
+		fmt.Sprintf("%s %.1fW @ %.0fMHz", tui.MetricLabel.Render("GPU Pwr"), s.Host.GPU.PowerW, s.Host.GPU.FrequencyMHz),
 		fmt.Sprintf("%s %.2f / %.2f", tui.MetricLabel.Render("Load"), s.Host.Load1, s.Host.Load5),
 		fmt.Sprintf("%s %d installed / %d running", tui.MetricLabel.Render("Models"), len(s.Installed), len(s.Running)),
 	}
@@ -229,12 +235,14 @@ func (m Model) renderTelemetry() string {
 	cpuSpark := util.Sparkline(m.cpuHistory, 32)
 	memSpark := util.Sparkline(m.memHistory, 32)
 	diskSpark := util.Sparkline(m.diskHistory, 32)
+	gpuSpark := util.Sparkline(m.gpuHistory, 32)
 
 	lines := []string{
 		tui.Title.Render("Trends"),
 		fmt.Sprintf("%s %s", tui.MetricLabel.Render("CPU"), tui.Accent.Render(cpuSpark)),
 		fmt.Sprintf("%s %s", tui.MetricLabel.Render("MEM"), tui.Accent.Render(memSpark)),
 		fmt.Sprintf("%s %s", tui.MetricLabel.Render("DSK"), tui.Accent.Render(diskSpark)),
+		fmt.Sprintf("%s %s", tui.MetricLabel.Render("GPU"), tui.Accent.Render(gpuSpark)),
 		"",
 		tui.Title.Render("Telemetry"),
 		fmt.Sprintf("%s %s", tui.MetricLabel.Render("Token/s"), renderTokenRate(s)),
@@ -254,9 +262,9 @@ func (m Model) renderTelemetry() string {
 	}
 
 	if s.Time.IsZero() {
-		lines = append(lines, "", tui.Dim.Render("İlk örnek bekleniyor..."))
+		lines = append(lines, "", tui.Dim.Render("Waiting for first sample..."))
 	} else if s.LogStats.RequestCount == 0 {
-		lines = append(lines, "", tui.Dim.Render("Log erişim kaydı bekleniyor."))
+		lines = append(lines, "", tui.Dim.Render("Waiting for access log entries."))
 	}
 
 	return tui.Box.Width(rightW).Render(strings.Join(lines, "\n"))
@@ -273,15 +281,15 @@ func (m Model) renderInsights() string {
 	insights := make([]string, 0, 6)
 
 	if s.Host.MemoryUsedPercent > 85 {
-		insights = append(insights, "• RAM kullanımı yüksek. Büyük model yüklemelerinde yavaşlama olabilir.")
+		insights = append(insights, "• RAM usage is high. Large model loads may slow down.")
 	} else if s.Host.MemoryUsedPercent > 70 {
-		insights = append(insights, "• RAM kullanımı orta-yüksek. Keep-alive süreleri gözden geçirilebilir.")
+		insights = append(insights, "• RAM usage is moderately high. Keep-alive settings may need review.")
 	} else {
-		insights = append(insights, "• RAM tarafı şu an rahat görünüyor.")
+		insights = append(insights, "• RAM usage is currently in a comfortable range.")
 	}
 
 	if s.Host.DiskUsedPercent > 80 {
-		insights = append(insights, "• Disk doluluğu kritik eşiğe yaklaşıyor. Eski modeller temizlenebilir.")
+		insights = append(insights, "• Disk usage is approaching a critical threshold. Old models may need cleanup.")
 	}
 
 	if len(s.Installed) > 0 {
@@ -291,25 +299,25 @@ func (m Model) renderInsights() string {
 				idx = i
 			}
 		}
-		insights = append(insights, fmt.Sprintf("• En büyük model: %s (%s)", s.Installed[idx].Name, util.BytesToHuman(s.Installed[idx].Size)))
+		insights = append(insights, fmt.Sprintf("• Largest installed model: %s (%s)", s.Installed[idx].Name, util.BytesToHuman(s.Installed[idx].Size)))
 	}
 
 	if len(s.Running) > 0 {
 		rm := s.Running[0]
-		insights = append(insights, fmt.Sprintf("• Aktif örnek: %s, VRAM/RAM yükü yaklaşık %s", rm.Name, util.BytesToHuman(rm.SizeVRAM)))
+		insights = append(insights, fmt.Sprintf("• Active runtime: %s, estimated VRAM/RAM load %s", rm.Name, util.BytesToHuman(rm.SizeVRAM)))
 	} else {
-		insights = append(insights, "• Şu an bellekte aktif model görünmüyor.")
+		insights = append(insights, "• No active in-memory model is visible right now.")
 	}
 
 	if s.LogStats.RequestCount > 0 {
-		insights = append(insights, fmt.Sprintf("• Son %d log kaydında ortalama latency %s.", s.LogStats.RequestCount, renderLatency(s.LogStats.AvgLatency)))
+		insights = append(insights, fmt.Sprintf("• Average latency across the last %d log entries is %s.", s.LogStats.RequestCount, renderLatency(s.LogStats.AvgLatency)))
 		if len(s.LogStats.TopEndpoints) > 0 {
-			insights = append(insights, fmt.Sprintf("• En yoğun endpoint: %s (%d istek).", s.LogStats.TopEndpoints[0].Endpoint, s.LogStats.TopEndpoints[0].Count))
+			insights = append(insights, fmt.Sprintf("• Busiest endpoint: %s (%d requests).", s.LogStats.TopEndpoints[0].Endpoint, s.LogStats.TopEndpoints[0].Count))
 		}
 	}
 
 	if m.filter != "" {
-		insights = append(insights, fmt.Sprintf("• Filtre etkin: %q", m.filter))
+		insights = append(insights, fmt.Sprintf("• Active filter: %q", m.filter))
 	}
 
 	return strings.Join(insights, "\n")
@@ -325,7 +333,7 @@ func (m Model) renderRunning() string {
 	running = filterRunning(running, m.filter)
 
 	if len(running) == 0 {
-		lines = append(lines, tui.Dim.Render("Aktif model yok veya filtre eşleşmedi."))
+		lines = append(lines, tui.Dim.Render("No active model found or the filter did not match."))
 		return tui.Box.Width(leftW).Render(strings.Join(lines, "\n"))
 	}
 
@@ -359,7 +367,7 @@ func (m Model) renderInstalled() string {
 	models = filterInstalled(models, m.filter)
 
 	if len(models) == 0 {
-		lines = append(lines, tui.Dim.Render("Yüklü model bulunamadı veya filtre eşleşmedi."))
+		lines = append(lines, tui.Dim.Render("No installed model found or the filter did not match."))
 		return tui.Box.Width(rightW).Render(strings.Join(lines, "\n"))
 	}
 
@@ -394,7 +402,7 @@ func (m Model) renderLogPanel() string {
 	case m.last.LogError != "":
 		lines = append(lines, tui.Warn.Render(m.last.LogError))
 	case len(m.last.LogLines) == 0:
-		lines = append(lines, tui.Dim.Render("Log bulunamadı. OLLAMON_LOG_PATH ile özel yol verebilirsin."))
+		lines = append(lines, tui.Dim.Render("Log file not found. Use OLLAMON_LOG_PATH to provide a custom path."))
 	default:
 		logLines := m.last.LogLines
 		if len(logLines) > 10 {
