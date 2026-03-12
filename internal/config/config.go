@@ -12,6 +12,7 @@ type Config struct {
 	Interval     time.Duration
 	RootDiskPath string
 	Compact      bool
+	LogPath      string
 	Version      string
 }
 
@@ -35,11 +36,14 @@ func Load() Config {
 		diskPath = "/"
 	}
 
+	logPath := strings.TrimSpace(os.Getenv("OLLAMON_LOG_PATH"))
+
 	return Config{
 		BaseURL:      normalizeBaseURL(os.Getenv("OLLAMA_HOST")),
 		Interval:     interval,
 		RootDiskPath: diskPath,
 		Compact:      compact,
+		LogPath:      logPath,
 	}
 }
 

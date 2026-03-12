@@ -18,6 +18,10 @@ type Sample struct {
 	Host        system.Stats
 	Installed   []ollama.Model
 	Running     []ollama.RunningModel
+	LogPath     string
+	LogLines    []string
+	LogError    string
+	LogStats    system.LogTelemetry
 }
 
 func CollectSample(cfg config.Config, client *ollama.Client) (Sample, error) {
@@ -27,6 +31,14 @@ func CollectSample(cfg config.Config, client *ollama.Client) (Sample, error) {
 
 	hs, _ := system.Collect(cfg.RootDiskPath)
 	s.Host = hs
+
+	logStats, logLines, logPath, logErr := system.ReadLogTelemetry(cfg.LogPath, 10)
+	s.LogLines = logLines
+	s.LogPath = logPath
+	s.LogStats = logStats
+	if logErr != nil {
+		s.LogError = logErr.Error()
+	}
 
 	installed, errTags := client.Tags(ctx)
 	running, errPS := client.PS(ctx)
